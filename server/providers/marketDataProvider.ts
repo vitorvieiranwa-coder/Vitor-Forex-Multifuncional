@@ -1,4 +1,8 @@
 import {
+  getMarketOpenScheduleStatus,
+  isInstrumentMarketOpen,
+} from '../../src/shared/marketHours';
+import {
   Candle,
   INSTRUMENTS,
   InstrumentId,
@@ -57,15 +61,6 @@ const TWELVE_DATA_INTERVAL: Record<Timeframe, string> = {
   H1: '1h',
 };
 
-function isForexWeekendClosedUtc(now = new Date()): boolean {
-  const day = now.getUTCDay(); // 0=Sun, 5=Fri, 6=Sat
-  const hour = now.getUTCHours();
-  if (day === 6) return true;
-  if (day === 5 && hour >= 22) return true;
-  if (day === 0 && hour < 22) return true;
-  return false;
-}
-
 export class MarketDataService {
   private quoteCache = new Map<InstrumentId, { data: Quote; expiresAt: number }>();
   private candleCache = new Map<string, { data: CandleFetchResult; expiresAt: number }>();
@@ -78,12 +73,25 @@ export class MarketDataService {
     return k && k.length > 5 && k !== 'MY_TWELVE_DATA_KEY' ? k : undefined;
   }
 
+  public invalidateAllCaches(): void {
+    this.quoteCache.clear();
+    this.candleCache.clear();
+  }
+
+  public invalidateInstrumentCache(instrument: InstrumentId): void {
+    this.quoteCache.delete(instrument);
+    for (const tf of ['M1', 'M5', 'M15', 'H1'] as const) {
+      this.candleCache.delete(`${instrument}_${tf}`);
+    }
+  }
+
   public getHealth(): MarketProviderHealth {
     const hasKey = Boolean(this.twelveDataKey);
     const providerName = hasKey
       ? 'Twelve Data API + Swissquote BBO'
       : 'Swissquote BBO + Yahoo Finance OHLC';
 
+    const schedule = getMarketOpenScheduleStatus();
     let feedStatus: MarketProviderHealth['feedStatus'] = 'CONNECTED';
     let message = 'Ligação ativa a cotações reais de mercado.';
 
@@ -92,9 +100,12 @@ export class MarketDataService {
       message = this.lastSuccessUtc
         ? `Instabilidade no fornecedor de dados: ${this.lastError || 'falha temporária'}`
         : 'SEM DADOS DE MERCADO';
-    } else if (isForexWeekendClosedUtc()) {
+    } else if (!schedule.isForexOpen) {
       feedStatus = 'CONNECTED';
-      message = 'Mercado Forex/Ouro encerrado (Fim de semana UTC) — Últimos preços reais de fecho.';
+      message = `Mercado encerrado (Fim de semana UTC) — Motor armado para análise imediata na abertura (${schedule.nextForexOpenUtc.slice(11, 16)} UTC).`;
+    } else if (!schedule.isGoldOpen) {
+      feedStatus = 'CONNECTED';
+      message = 'Forex ativo · Ouro (XAU/USD) em pausa diária até às 23:00 UTC.';
     }
 
     return {
@@ -111,9 +122,9 @@ export class MarketDataService {
   /**
    * Fetches real Bid/Ask/Spread quote via Swissquote BBO feed.
    */
-  public async getQuote(instrument: InstrumentId): Promise<Quote | null> {
+  public async getQuote(instrument: InstrumentId, forceFresh = false): Promise<Quote | null> {
     const cached = this.quoteCache.get(instrument);
-    if (cached && cached.expiresAt > Date.now()) {
+    if (!forceFresh && cached && cached.expiresAt > Date.now()) {
       return cached.data;
     }
 
@@ -158,7 +169,7 @@ export class MarketDataService {
 
       const quoteTs = typeof entry?.ts === 'number' ? entry.ts : Date.now();
       const ageMs = Math.max(0, Date.now() - quoteTs);
-      const marketOpen = !isForexWeekendClosedUtc();
+      const marketOpen = isInstrumentMarketOpen(instrument, ageMs);
 
       // Compute session changePct from cached H1/M15 open if available
       let changePct = 0;
@@ -196,9 +207,9 @@ export class MarketDataService {
     }
   }
 
-  public async getAllQuotes(): Promise<Record<InstrumentId, Quote | null>> {
+  public async getAllQuotes(forceFresh = false): Promise<Record<InstrumentId, Quote | null>> {
     const results = await Promise.all(
-      INSTRUMENT_LIST.map(async (inst) => [inst, await this.getQuote(inst)] as const)
+      INSTRUMENT_LIST.map(async (inst) => [inst, await this.getQuote(inst, forceFresh)] as const)
     );
     return Object.fromEntries(results) as Record<InstrumentId, Quote | null>;
   }
@@ -210,12 +221,13 @@ export class MarketDataService {
   public async getCandles(
     instrument: InstrumentId,
     timeframe: Timeframe,
-    limit = 240
+    limit = 240,
+    forceFresh = false
   ): Promise<CandleFetchResult | null> {
     const cacheKey = `${instrument}_${timeframe}`;
     const ttlMs = timeframe === 'M1' ? 30_000 : timeframe === 'M5' ? 45_000 : 120_000;
     const cached = this.candleCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
+    if (!forceFresh && cached && cached.expiresAt > Date.now()) {
       return {
         ...cached.data,
         candles: cached.data.candles.slice(-limit),

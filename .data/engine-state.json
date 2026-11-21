@@ -1,5 +1,36 @@
 {
   "emittedOpportunityKeys": [],
   "recentCandidates": [],
-  "userWatches": {}
+  "userWatches": {
+    "r5IlGMqwsBg4vfpi2j5BUXeVWqS2": {
+      "userId": "r5IlGMqwsBg4vfpi2j5BUXeVWqS2",
+      "settings": {
+        "alertGbpJpy": true,
+        "maxConsecutiveLosses": 2,
+        "maxOpenPositions": 3,
+        "referenceCapital": 10000,
+        "riskPercentPerTrade": 0.25,
+        "alertXauUsd": true,
+        "minRiskReward": 1.5,
+        "scalpingTargetPips": 10,
+        "intradayTargetPips": 20,
+        "xauIntradayDistance": 7,
+        "updatedAt": {
+          "type": "firestore/timestamp/1.0",
+          "seconds": 1795270303,
+          "nanoseconds": 573000000
+        },
+        "xauScalpingDistance": 3.5,
+        "alertEurUsd": true,
+        "dailyLossLimitPercent": 1,
+        "autoPauseOnLimit": true,
+        "userId": "r5IlGMqwsBg4vfpi2j5BUXeVWqS2",
+        "pushEnabled": false,
+        "alertGbpUsd": true,
+        "alertEurJpy": true
+      },
+      "signals": [],
+      "updatedAtUtc": "2026-11-21T15:38:23.428Z"
+    }
+  }
 }

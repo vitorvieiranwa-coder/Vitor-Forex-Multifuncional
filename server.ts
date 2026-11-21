@@ -1,7 +1,13 @@
+import { execFile } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'path';
+import { promisify } from 'node:util';
 import 'dotenv/config';
 import express from 'express';
-import path from 'path';
 import { createServer as createViteServer } from 'vite';
+
+const execFileAsync = promisify(execFile);
 import { PushNotificationService } from './server/notifications/pushService';
 import { MarketDataService } from './server/providers/marketDataProvider';
 import { MarketMonitorService } from './server/scheduler/monitorService';
@@ -21,6 +27,7 @@ import {
   calculateVWAP,
   computeIndicatorSnapshot,
 } from './src/shared/indicators';
+import { getMarketOpenScheduleStatus } from './src/shared/marketHours';
 import { evaluateTrackedSignal } from './src/shared/positionMonitor';
 import { evaluateStrategyForInstrument } from './src/shared/strategy';
 import {
@@ -34,8 +41,10 @@ import {
   UserSettings,
 } from './src/shared/types';
 
-const PORT = Number(process.env.PORT) || 3000;
 const IS_PROD = process.env.NODE_ENV === 'production';
+const PORT = IS_PROD
+  ? Number(process.env.PORT) || 3000
+  : Number(process.env.DEFAULT_APP_PORT) || 3000;
 
 function isValidInstrumentParam(val: unknown): val is InstrumentId {
   return typeof val === 'string' && INSTRUMENT_LIST.includes(val as InstrumentId);
@@ -73,6 +82,7 @@ export function createApp() {
     res.json({
       timestampUtc: new Date().toISOString(),
       health: marketData.getHealth(),
+      marketSchedule: getMarketOpenScheduleStatus(),
       instruments: monitorService.getOverviews(),
     });
   });
@@ -84,34 +94,38 @@ export function createApp() {
       if (!settings) {
         return res.status(400).json({ error: 'Missing settings payload' });
       }
-      const candidates = [];
-      for (const inst of INSTRUMENT_LIST) {
-        const quote = await marketData.getQuote(inst);
-        const [h1, m15, m5, m1] = await Promise.all([
-          marketData.getCandles(inst, 'H1', 220),
-          marketData.getCandles(inst, 'M15', 220),
-          marketData.getCandles(inst, 'M5', 220),
-          marketData.getCandles(inst, 'M1', 180),
-        ]);
-        if (!quote || !h1 || !m15 || !m5) continue;
+      const perInst = await Promise.all(
+        INSTRUMENT_LIST.map(async (inst) => {
+          const quote = await marketData.getQuote(inst);
+          const [h1, m15, m5, m1] = await Promise.all([
+            marketData.getCandles(inst, 'H1', 220),
+            marketData.getCandles(inst, 'M15', 220),
+            marketData.getCandles(inst, 'M5', 220),
+            marketData.getCandles(inst, 'M1', 180),
+          ]);
+          if (!quote || !h1 || !m15 || !m5) return [];
 
-        const input = {
-          instrument: inst,
-          quote,
-          candlesByTf: {
-            H1: h1.candles,
-            M15: m15.candles,
-            M5: m5.candles,
-            M1: m1?.candles || [],
-          },
-          volumeType: m5.volumeType,
-          settings,
-        };
-        const scalp = evaluateStrategyForInstrument(input, 'SCALPING', true);
-        const intra = evaluateStrategyForInstrument(input, 'INTRADAY', true);
-        if (scalp) candidates.push(scalp);
-        if (intra) candidates.push(intra);
-      }
+          const input = {
+            instrument: inst,
+            quote,
+            candlesByTf: {
+              H1: h1.candles,
+              M15: m15.candles,
+              M5: m5.candles,
+              M1: m1?.candles || [],
+            },
+            volumeType: m5.volumeType,
+            settings,
+          };
+          const out = [];
+          const scalp = evaluateStrategyForInstrument(input, 'SCALPING', true);
+          const intra = evaluateStrategyForInstrument(input, 'INTRADAY', true);
+          if (scalp) out.push(scalp);
+          if (intra) out.push(intra);
+          return out;
+        })
+      );
+      const candidates = perInst.flat();
       return res.json({ candidates, timestampUtc: new Date().toISOString() });
     } catch (err) {
       return res.status(500).json({
@@ -190,10 +204,11 @@ export function createApp() {
 
   // Trigger manual market scan
   app.post('/api/engine/run-scan', async (_req, res) => {
-    await monitorService.runFullAnalysisCycle();
+    await monitorService.runFullAnalysisCycle({ forceFresh: true, reason: 'MANUAL_API' });
     res.json({
       ok: true,
       timestampUtc: new Date().toISOString(),
+      marketSchedule: getMarketOpenScheduleStatus(),
       instruments: monitorService.getOverviews(),
     });
   });
@@ -368,6 +383,38 @@ export function createApp() {
       tag: `test-${Date.now()}`,
     });
     return res.json({ ok: true, ...outcome });
+  });
+
+  // Export clean project source ZIP (excludes node_modules, dist, .git, .data, and .env secrets)
+  app.get('/api/project/export-zip', async (_req, res) => {
+    const outZip = path.join(os.tmpdir(), `forex-intelligence-${Date.now()}.zip`);
+    const rootDir = process.cwd();
+    const pyScript = `
+import os, sys, zipfile
+root_dir, out_zip = sys.argv[1], sys.argv[2]
+skip_dirs = {'node_modules', 'dist', '.git', '.data', '.aistudio', '__pycache__'}
+with zipfile.ZipFile(out_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+        for fname in filenames:
+            if fname.startswith('.env') and fname != '.env.example':
+                continue
+            if fname.endswith('.zip'):
+                continue
+            full_path = os.path.join(dirpath, fname)
+            rel_path = os.path.relpath(full_path, root_dir)
+            zf.write(full_path, rel_path)
+`;
+    try {
+      await execFileAsync('python3', ['-c', pyScript, rootDir, outZip]);
+      res.download(outZip, 'forex-intelligence.zip', () => {
+        fs.unlink(outZip, () => {});
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Falha ao gerar ficheiro ZIP',
+      });
+    }
   });
 
   return { app, monitorService };

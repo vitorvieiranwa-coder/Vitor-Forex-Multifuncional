@@ -39,6 +39,7 @@ import {
   subscribeToSignals,
 } from './services/firestoreService';
 import { DayReplaySummary } from './shared/dayReplay';
+import { getMarketOpenScheduleStatus } from './shared/marketHours';
 import {
   PositionEvaluationResult,
   evaluateRiskStatus,
@@ -237,8 +238,38 @@ const WorkspaceShell: React.FC = () => {
 
   useEffect(() => {
     void fetchMarketSnapshot();
-    const timer = setInterval(fetchMarketSnapshot, 20_000);
-    return () => clearInterval(timer);
+
+    let prevAnyOpen = getMarketOpenScheduleStatus().isAnyOpen;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const scheduleNext = () => {
+      if (cancelled) return;
+      const sched = getMarketOpenScheduleStatus();
+      const intervalMs =
+        sched.isWithinPreOpenWindow || sched.isWithinPostOpenLaunchWindow ? 5_000 : 20_000;
+      timerId = setTimeout(async () => {
+        if (cancelled) return;
+        const currentSched = getMarketOpenScheduleStatus();
+        if (!prevAnyOpen && currentSched.isAnyOpen) {
+          // Market just opened — request an immediate fresh backend scan
+          try {
+            await fetch('/api/engine/run-scan', { method: 'POST' });
+          } catch {
+            // Non-fatal fallback to snapshot fetch
+          }
+        }
+        prevAnyOpen = currentSched.isAnyOpen;
+        await fetchMarketSnapshot();
+        scheduleNext();
+      }, intervalMs);
+    };
+
+    scheduleNext();
+    return () => {
+      cancelled = true;
+      if (timerId) clearTimeout(timerId);
+    };
   }, [fetchMarketSnapshot]);
 
   // Persist newly detected actionable signals into Firestore (with dedup ID)

@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
   CheckCircle2,
+  Clock,
   RefreshCw,
 } from 'lucide-react';
+import { getMarketOpenScheduleStatus } from '../shared/marketHours';
 import { evaluateTradingSession, getClassificationLabel } from '../shared/strategy';
 import {
   INSTRUMENTS,
@@ -57,6 +59,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onRefreshScan,
   refreshing,
 }) => {
+  const [scheduleStatus, setScheduleStatus] = useState(() => getMarketOpenScheduleStatus());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setScheduleStatus(getMarketOpenScheduleStatus());
+    }, 1_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const openPositions = signals.filter(
     (s) => s.status === 'POSICAO_ABERTA' || s.status === 'ENCERRAMENTO_RECOMENDADO'
   );
@@ -87,6 +98,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {lastScanUtc && ` · Última análise UTC: ${lastScanUtc.slice(11, 19)}`}
               {` · Sessão: ${evaluateTradingSession('EUR/USD', new Date()).label}`}
             </p>
+            {!scheduleStatus.isForexOpen || !scheduleStatus.isGoldOpen ? (
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-sky-400">
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                <span>{scheduleStatus.statusText}</span>
+              </p>
+            ) : null}
           </div>
         </div>
 

@@ -37,7 +37,19 @@ export class PushNotificationService {
 
     const envPub = process.env.VAPID_PUBLIC_KEY?.trim();
     const envPriv = process.env.VAPID_PRIVATE_KEY?.trim();
-    const subject = process.env.VAPID_SUBJECT?.trim() || 'mailto:alerts@forex-intelligence.local';
+    const fallbackSubject = 'mailto:alerts@forex-intelligence.local';
+    const rawSubject = process.env.VAPID_SUBJECT?.trim() || '';
+    let subject = fallbackSubject;
+    if (rawSubject) {
+      try {
+        const parsed = new URL(rawSubject);
+        if (parsed.protocol === 'https:' || parsed.protocol === 'mailto:') {
+          subject = rawSubject;
+        }
+      } catch {
+        subject = fallbackSubject;
+      }
+    }
 
     if (envPub && envPriv) {
       this.publicKey = envPub;
@@ -63,7 +75,20 @@ export class PushNotificationService {
       fs.writeFileSync(VAPID_FILE, JSON.stringify(keys, null, 2));
     }
 
-    webpush.setVapidDetails(subject, this.publicKey, this.privateKey);
+    try {
+      webpush.setVapidDetails(subject, this.publicKey, this.privateKey);
+    } catch (err) {
+      console.warn('[PushNotificationService] Invalid VAPID config, regenerating safe defaults:', err);
+      const keys = webpush.generateVAPIDKeys();
+      this.publicKey = keys.publicKey;
+      this.privateKey = keys.privateKey;
+      try {
+        fs.writeFileSync(VAPID_FILE, JSON.stringify(keys, null, 2));
+      } catch {
+        // Non-fatal in read-only containers
+      }
+      webpush.setVapidDetails(fallbackSubject, this.publicKey, this.privateKey);
+    }
 
     if (fs.existsSync(SUBS_FILE)) {
       try {

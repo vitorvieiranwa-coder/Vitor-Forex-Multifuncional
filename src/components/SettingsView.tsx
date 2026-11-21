@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Download } from 'lucide-react';
 import { saveUserSettings } from '../services/firestoreService';
 import { UserSettings } from '../shared/types';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -201,6 +202,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </p>
             <div className="pt-1">
               <PWAInstallButton />
+            </div>
+          </div>
+
+          <div className="bg-[#111827] border border-slate-800 rounded-lg p-5 space-y-3 text-xs">
+            <h3 className="text-sm font-semibold text-slate-200">
+              Exportar Projeto Completo (.ZIP)
+            </h3>
+            <p className="text-slate-400 leading-relaxed">
+              Descarregue o código-fonte completo (Frontend, Backend, Motor de Estratégias, Testes, Dockerfile e Regras Firestore, sem chaves secretas ou pastas de compilação).
+            </p>
+            <div className="pt-1">
+              <a
+                href="/api/project/export-zip"
+                download="forex-intelligence.zip"
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-md transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Descarregar Projeto (.zip)</span>
+              </a>
             </div>
           </div>
         </div>
