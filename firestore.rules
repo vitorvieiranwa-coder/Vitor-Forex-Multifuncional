@@ -1,0 +1,314 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Primitives ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedOwner(userId) {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.uid == userId;
+    }
+
+    function isValidInstrument(val) {
+      return val is string && val in ['EUR/USD', 'GBP/USD', 'EUR/JPY', 'GBP/JPY', 'XAU/USD'];
+    }
+
+    function isValidSignalStatus(val) {
+      return val is string && val in [
+        'EMITIDO',
+        'AGUARDAR_ENTRADA',
+        'POSICAO_ABERTA',
+        'TP_ATINGIDO',
+        'SL_ATINGIDO',
+        'ENCERRADO_MANUALMENTE',
+        'ENCERRAMENTO_RECOMENDADO',
+        'INVALIDADO',
+        'EXPIRADO'
+      ];
+    }
+
+    function isTerminalSignalStatus(val) {
+      return val in [
+        'TP_ATINGIDO',
+        'SL_ATINGIDO',
+        'ENCERRADO_MANUALMENTE',
+        'INVALIDADO',
+        'EXPIRADO'
+      ];
+    }
+
+    // --- Validation Blueprints ---
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == userId
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserSettings(data, userId) {
+      return data.keys().hasAll([
+          'userId', 'riskPercentPerTrade', 'referenceCapital', 'dailyLossLimitPercent',
+          'maxOpenPositions', 'maxConsecutiveLosses', 'autoPauseOnLimit',
+          'scalpingTargetPips', 'intradayTargetPips', 'xauScalpingDistance',
+          'xauIntradayDistance', 'minRiskReward', 'pushEnabled',
+          'alertEurUsd', 'alertGbpUsd', 'alertEurJpy', 'alertGbpJpy', 'alertXauUsd', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'riskPercentPerTrade', 'referenceCapital', 'dailyLossLimitPercent',
+          'maxOpenPositions', 'maxConsecutiveLosses', 'autoPauseOnLimit',
+          'scalpingTargetPips', 'intradayTargetPips', 'xauScalpingDistance',
+          'xauIntradayDistance', 'minRiskReward', 'pushEnabled',
+          'alertEurUsd', 'alertGbpUsd', 'alertEurJpy', 'alertGbpJpy', 'alertXauUsd', 'updatedAt'
+        ])
+        && isValidId(data.userId) && data.userId == userId
+        && data.riskPercentPerTrade is number && data.riskPercentPerTrade > 0 && data.riskPercentPerTrade <= 10
+        && data.referenceCapital is number && data.referenceCapital > 0 && data.referenceCapital <= 100000000
+        && data.dailyLossLimitPercent is number && data.dailyLossLimitPercent > 0 && data.dailyLossLimitPercent <= 50
+        && data.maxOpenPositions is number && data.maxOpenPositions >= 1 && data.maxOpenPositions <= 20
+        && data.maxConsecutiveLosses is number && data.maxConsecutiveLosses >= 1 && data.maxConsecutiveLosses <= 20
+        && data.autoPauseOnLimit is bool
+        && data.scalpingTargetPips is number && data.scalpingTargetPips >= 2 && data.scalpingTargetPips <= 100
+        && data.intradayTargetPips is number && data.intradayTargetPips >= 5 && data.intradayTargetPips <= 300
+        && data.xauScalpingDistance is number && data.xauScalpingDistance >= 0.5 && data.xauScalpingDistance <= 50
+        && data.xauIntradayDistance is number && data.xauIntradayDistance >= 1 && data.xauIntradayDistance <= 150
+        && data.minRiskReward is number && data.minRiskReward >= 1.0 && data.minRiskReward <= 10.0
+        && data.pushEnabled is bool
+        && data.alertEurUsd is bool
+        && data.alertGbpUsd is bool
+        && data.alertEurJpy is bool
+        && data.alertGbpJpy is bool
+        && data.alertXauUsd is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTradingSignal(data, userId, signalId) {
+      return data.keys().hasAll([
+          'id', 'userId', 'instrument', 'direction', 'strategy', 'timeframe',
+          'executionType', 'status', 'score', 'recommendedEntry', 'takeProfit',
+          'stopLoss', 'observedSpread', 'indicatorsSummary', 'rationale',
+          'sourceType', 'reversalAlertIssued', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'instrument', 'direction', 'strategy', 'timeframe',
+          'executionType', 'status', 'score', 'recommendedEntry', 'actualEntry',
+          'takeProfit', 'stopLoss', 'observedSpread', 'lots', 'indicatorsSummary',
+          'rationale', 'sourceType', 'closeReason', 'resultR', 'resultMonetary',
+          'reversalAlertIssued', 'createdAt', 'updatedAt', 'closedAt'
+        ])
+        && isValidId(data.id) && data.id == signalId
+        && isValidId(data.userId) && data.userId == userId
+        && isValidInstrument(data.instrument)
+        && data.direction is string && data.direction in ['BUY', 'SELL']
+        && data.strategy is string && data.strategy in ['SCALPING', 'INTRADAY']
+        && data.timeframe is string && data.timeframe in ['M1', 'M5', 'M15', 'H1']
+        && data.executionType is string && data.executionType in ['IMMEDIATE', 'CONDITIONAL']
+        && isValidSignalStatus(data.status)
+        && data.score is number && data.score >= 0 && data.score <= 100
+        && data.recommendedEntry is number && data.recommendedEntry > 0
+        && (!('actualEntry' in data) || (data.actualEntry is number && data.actualEntry > 0))
+        && data.takeProfit is number && data.takeProfit > 0
+        && data.stopLoss is number && data.stopLoss > 0
+        && data.observedSpread is number && data.observedSpread >= 0
+        && (!('lots' in data) || (data.lots is number && data.lots > 0 && data.lots <= 1000))
+        && data.indicatorsSummary is string && data.indicatorsSummary.size() >= 1 && data.indicatorsSummary.size() <= 1200
+        && data.rationale is string && data.rationale.size() >= 1 && data.rationale.size() <= 2000
+        && data.sourceType is string && data.sourceType in ['LIVE_SIGNAL', 'DEMO_SIGNAL', 'BACKTEST_HISTORICAL']
+        && (!('closeReason' in data) || (data.closeReason is string && data.closeReason.size() <= 500))
+        && (!('resultR' in data) || data.resultR is number)
+        && (!('resultMonetary' in data) || data.resultMonetary is number)
+        && data.reversalAlertIssued is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && (!('closedAt' in data) || data.closedAt is timestamp);
+    }
+
+    function signalOriginImmutable() {
+      return incoming().id == existing().id
+        && incoming().userId == existing().userId
+        && incoming().instrument == existing().instrument
+        && incoming().direction == existing().direction
+        && incoming().strategy == existing().strategy
+        && incoming().timeframe == existing().timeframe
+        && incoming().executionType == existing().executionType
+        && incoming().score == existing().score
+        && incoming().recommendedEntry == existing().recommendedEntry
+        && incoming().takeProfit == existing().takeProfit
+        && incoming().stopLoss == existing().stopLoss
+        && incoming().observedSpread == existing().observedSpread
+        && incoming().indicatorsSummary == existing().indicatorsSummary
+        && incoming().rationale == existing().rationale
+        && incoming().sourceType == existing().sourceType
+        && incoming().createdAt == existing().createdAt;
+    }
+
+    function isValidSignalEvent(data, userId, signalId, eventId) {
+      return data.keys().hasAll(['id', 'signalId', 'userId', 'eventType', 'message', 'createdAt'])
+        && data.keys().hasOnly(['id', 'signalId', 'userId', 'eventType', 'message', 'priceAtEvent', 'createdAt'])
+        && isValidId(data.id) && data.id == eventId
+        && isValidId(data.signalId) && data.signalId == signalId
+        && isValidId(data.userId) && data.userId == userId
+        && data.eventType is string && data.eventType.size() >= 1 && data.eventType.size() <= 64
+        && data.message is string && data.message.size() >= 1 && data.message.size() <= 1500
+        && (!('priceAtEvent' in data) || (data.priceAtEvent is number && data.priceAtEvent > 0))
+        && data.createdAt is timestamp;
+    }
+
+    function isValidNotification(data, userId, notifId) {
+      return data.keys().hasAll(['id', 'userId', 'instrument', 'category', 'title', 'body', 'read', 'createdAt'])
+        && data.keys().hasOnly(['id', 'userId', 'signalId', 'instrument', 'category', 'title', 'body', 'read', 'createdAt'])
+        && isValidId(data.id) && data.id == notifId
+        && isValidId(data.userId) && data.userId == userId
+        && (!('signalId' in data) || isValidId(data.signalId))
+        && isValidInstrument(data.instrument)
+        && data.category is string && data.category in ['NEW_BUY', 'NEW_SELL', 'TP_HIT', 'SL_HIT', 'REVERSAL_EXIT', 'INVALIDATED']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.body is string && data.body.size() >= 1 && data.body.size() <= 1000
+        && data.read is bool
+        && data.createdAt is timestamp;
+    }
+
+    function isValidPushSubscription(data, userId, subId) {
+      return data.keys().hasAll(['id', 'userId', 'endpoint', 'createdAt'])
+        && data.keys().hasOnly(['id', 'userId', 'endpoint', 'userAgent', 'createdAt'])
+        && isValidId(data.id) && data.id == subId
+        && isValidId(data.userId) && data.userId == userId
+        && data.endpoint is string && data.endpoint.size() >= 10 && data.endpoint.size() <= 1024
+        && (!('userAgent' in data) || (data.userAgent is string && data.userAgent.size() <= 300))
+        && data.createdAt is timestamp;
+    }
+
+    // --- Collection Rules ---
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isVerifiedOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isVerifiedOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isVerifiedOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'updatedAt']);
+      allow delete: if false;
+
+      match /settings/{settingId} {
+        allow get: if isValidId(userId) && isValidId(settingId) && isVerifiedOwner(userId);
+        allow list: if isValidId(userId) && isVerifiedOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(settingId)
+          && isVerifiedOwner(userId)
+          && isValidUserSettings(incoming(), userId)
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(userId) && isValidId(settingId)
+          && isVerifiedOwner(userId)
+          && isValidUserSettings(incoming(), userId)
+          && incoming().userId == existing().userId
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'riskPercentPerTrade', 'referenceCapital', 'dailyLossLimitPercent',
+            'maxOpenPositions', 'maxConsecutiveLosses', 'autoPauseOnLimit',
+            'scalpingTargetPips', 'intradayTargetPips', 'xauScalpingDistance',
+            'xauIntradayDistance', 'minRiskReward', 'pushEnabled',
+            'alertEurUsd', 'alertGbpUsd', 'alertEurJpy', 'alertGbpJpy', 'alertXauUsd', 'updatedAt'
+          ]);
+        allow delete: if false;
+      }
+
+      match /signals/{signalId} {
+        allow get: if isValidId(userId) && isValidId(signalId) && isVerifiedOwner(userId);
+        allow list: if isValidId(userId) && isVerifiedOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(signalId)
+          && isVerifiedOwner(userId)
+          && isValidTradingSignal(incoming(), userId, signalId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(userId) && isValidId(signalId)
+          && isVerifiedOwner(userId)
+          && isValidTradingSignal(incoming(), userId, signalId)
+          && signalOriginImmutable()
+          && !isTerminalSignalStatus(existing().status)
+          && incoming().updatedAt == request.time
+          && (
+            (incoming().status == 'POSICAO_ABERTA'
+              && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'actualEntry', 'lots', 'updatedAt'])) ||
+            (incoming().status == 'ENCERRAMENTO_RECOMENDADO'
+              && incoming().reversalAlertIssued == true
+              && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reversalAlertIssued', 'updatedAt'])) ||
+            (isTerminalSignalStatus(incoming().status)
+              && incoming().closedAt == request.time
+              && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'closeReason', 'resultR', 'resultMonetary', 'closedAt', 'updatedAt']))
+          );
+        allow delete: if false;
+
+        match /events/{eventId} {
+          allow get: if isValidId(userId) && isValidId(signalId) && isValidId(eventId) && isVerifiedOwner(userId);
+          allow list: if isValidId(userId) && isValidId(signalId) && isVerifiedOwner(userId) && resource.data.userId == request.auth.uid;
+          allow create: if isValidId(userId) && isValidId(signalId) && isValidId(eventId)
+            && isVerifiedOwner(userId)
+            && isValidSignalEvent(incoming(), userId, signalId, eventId)
+            && incoming().createdAt == request.time
+            && exists(/databases/$(database)/documents/users/$(userId)/signals/$(signalId))
+            && get(/databases/$(database)/documents/users/$(userId)/signals/$(signalId)).data.userId == request.auth.uid;
+          allow update: if false;
+          allow delete: if false;
+        }
+      }
+
+      match /notifications/{notificationId} {
+        allow get: if isValidId(userId) && isValidId(notificationId) && isVerifiedOwner(userId);
+        allow list: if isValidId(userId) && isVerifiedOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(notificationId)
+          && isVerifiedOwner(userId)
+          && isValidNotification(incoming(), userId, notificationId)
+          && incoming().createdAt == request.time;
+        allow update: if isValidId(userId) && isValidId(notificationId)
+          && isVerifiedOwner(userId)
+          && isValidNotification(incoming(), userId, notificationId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+        allow delete: if isValidId(userId) && isValidId(notificationId) && isVerifiedOwner(userId);
+      }
+
+      match /pushSubscriptions/{subscriptionId} {
+        allow get: if isValidId(userId) && isValidId(subscriptionId) && isVerifiedOwner(userId);
+        allow list: if isValidId(userId) && isVerifiedOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(subscriptionId)
+          && isVerifiedOwner(userId)
+          && isValidPushSubscription(incoming(), userId, subscriptionId)
+          && incoming().createdAt == request.time;
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(subscriptionId) && isVerifiedOwner(userId);
+      }
+    }
+  }
+}

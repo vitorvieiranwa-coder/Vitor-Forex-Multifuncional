@@ -1,0 +1,201 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated trader profile isolated by owner UID.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "minLength": 3, "maxLength": 254 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "createdAt", "updatedAt"]
+    },
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "Trading strategy, risk management, and per-instrument alert configuration.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "riskPercentPerTrade": { "type": "number" },
+        "referenceCapital": { "type": "number" },
+        "dailyLossLimitPercent": { "type": "number" },
+        "maxOpenPositions": { "type": "number" },
+        "maxConsecutiveLosses": { "type": "number" },
+        "autoPauseOnLimit": { "type": "boolean" },
+        "scalpingTargetPips": { "type": "number" },
+        "intradayTargetPips": { "type": "number" },
+        "xauScalpingDistance": { "type": "number" },
+        "xauIntradayDistance": { "type": "number" },
+        "minRiskReward": { "type": "number" },
+        "pushEnabled": { "type": "boolean" },
+        "alertEurUsd": { "type": "boolean" },
+        "alertGbpUsd": { "type": "boolean" },
+        "alertEurJpy": { "type": "boolean" },
+        "alertGbpJpy": { "type": "boolean" },
+        "alertXauUsd": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "riskPercentPerTrade",
+        "referenceCapital",
+        "dailyLossLimitPercent",
+        "maxOpenPositions",
+        "maxConsecutiveLosses",
+        "autoPauseOnLimit",
+        "scalpingTargetPips",
+        "intradayTargetPips",
+        "xauScalpingDistance",
+        "xauIntradayDistance",
+        "minRiskReward",
+        "pushEnabled",
+        "alertEurUsd",
+        "alertGbpUsd",
+        "alertEurJpy",
+        "alertGbpJpy",
+        "alertXauUsd",
+        "updatedAt"
+      ]
+    },
+    "TradingSignal": {
+      "title": "TradingSignal",
+      "description": "Immutable-origin BUY/SELL signal and active position lifecycle record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "instrument": { "type": "string", "enum": ["EUR/USD", "GBP/USD", "EUR/JPY", "GBP/JPY", "XAU/USD"] },
+        "direction": { "type": "string", "enum": ["BUY", "SELL"] },
+        "strategy": { "type": "string", "enum": ["SCALPING", "INTRADAY"] },
+        "timeframe": { "type": "string", "enum": ["M1", "M5", "M15", "H1"] },
+        "executionType": { "type": "string", "enum": ["IMMEDIATE", "CONDITIONAL"] },
+        "status": {
+          "type": "string",
+          "enum": [
+            "EMITIDO",
+            "AGUARDAR_ENTRADA",
+            "POSICAO_ABERTA",
+            "TP_ATINGIDO",
+            "SL_ATINGIDO",
+            "ENCERRADO_MANUALMENTE",
+            "ENCERRAMENTO_RECOMENDADO",
+            "INVALIDADO",
+            "EXPIRADO"
+          ]
+        },
+        "score": { "type": "number" },
+        "recommendedEntry": { "type": "number" },
+        "actualEntry": { "type": "number" },
+        "takeProfit": { "type": "number" },
+        "stopLoss": { "type": "number" },
+        "observedSpread": { "type": "number" },
+        "lots": { "type": "number" },
+        "indicatorsSummary": { "type": "string", "minLength": 1, "maxLength": 1200 },
+        "rationale": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "sourceType": { "type": "string", "enum": ["LIVE_SIGNAL", "DEMO_SIGNAL", "BACKTEST_HISTORICAL"] },
+        "closeReason": { "type": "string", "maxLength": 500 },
+        "resultR": { "type": "number" },
+        "resultMonetary": { "type": "number" },
+        "reversalAlertIssued": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "closedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "userId",
+        "instrument",
+        "direction",
+        "strategy",
+        "timeframe",
+        "executionType",
+        "status",
+        "score",
+        "recommendedEntry",
+        "takeProfit",
+        "stopLoss",
+        "observedSpread",
+        "indicatorsSummary",
+        "rationale",
+        "sourceType",
+        "reversalAlertIssued",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SignalEvent": {
+      "title": "SignalEvent",
+      "description": "Append-only chronological audit event for a trading signal.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "signalId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "eventType": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1500 },
+        "priceAtEvent": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "signalId", "userId", "eventType", "message", "createdAt"]
+    },
+    "UserNotification": {
+      "title": "UserNotification",
+      "description": "In-app alert and push delivery log for the user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "signalId": { "type": "string", "maxLength": 128 },
+        "instrument": { "type": "string", "enum": ["EUR/USD", "GBP/USD", "EUR/JPY", "GBP/JPY", "XAU/USD"] },
+        "category": { "type": "string", "enum": ["NEW_BUY", "NEW_SELL", "TP_HIT", "SL_HIT", "REVERSAL_EXIT", "INVALIDATED"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "instrument", "category", "title", "body", "read", "createdAt"]
+    },
+    "PushSubscriptionRecord": {
+      "title": "PushSubscriptionRecord",
+      "description": "Stored Web Push endpoint keyset for a user device.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "endpoint": { "type": "string", "minLength": 10, "maxLength": 1024 },
+        "userAgent": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "endpoint", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Authenticated user profile document."
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/UserSettings" },
+      "description": "Trading, risk management, and alert settings for the user."
+    },
+    "/users/{userId}/signals/{signalId}": {
+      "schema": { "$ref": "#/entities/TradingSignal" },
+      "description": "Permanent archive of all trading signals and tracked positions."
+    },
+    "/users/{userId}/signals/{signalId}/events/{eventId}": {
+      "schema": { "$ref": "#/entities/SignalEvent" },
+      "description": "Immutable chronological event log per trading signal."
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/UserNotification" },
+      "description": "Alert notifications emitted for the user."
+    },
+    "/users/{userId}/pushSubscriptions/{subscriptionId}": {
+      "schema": { "$ref": "#/entities/PushSubscriptionRecord" },
+      "description": "Registered Web Push endpoints per device."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "FOREX INTELLIGENCE",
+  "description": "Plataforma profissional de análise técnica Forex, Scalping e Intraday para EUR/USD, GBP/USD, EUR/JPY, GBP/JPY e XAU/USD.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
